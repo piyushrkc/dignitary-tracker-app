@@ -3,15 +3,20 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "your-project-id.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project-id.appspot.com",
-  messagingSenderId: "XXXXXXXXXXXX",
-  appId: "1:XXXXXXXXXXXX:web:XXXXXXXX"
+  apiKey: "AIzaSyBX6-umin8lvSXFxi-xpFCPrHpEEQfWkqk",
+  authDomain: "dignitary-tracker.firebaseapp.com",
+  projectId: "dignitary-tracker",
+  storageBucket: "dignitary-tracker.firebasestorage.app",
+  messagingSenderId: "697251295075",
+  appId: "1:697251295075:web:0f1a1fb5cf21d1f41aad56"
 };
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
 export const db = getFirestore(app);

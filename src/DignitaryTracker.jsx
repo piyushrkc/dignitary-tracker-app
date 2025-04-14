@@ -1,60 +1,30 @@
+import { serverTimestamp } from "firebase/firestore";
+import { db } from './firebase';
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  orderBy
+} from "firebase/firestore";
+
 import React, { useState, useEffect } from 'react';
 import { Search, List, Grid, Trash2, Edit2, Save, X, Upload, User } from 'lucide-react';
 
-// Mock data for initial testing
-const initialDignitaries = [
-  {
-    id: 1,
-    name: "Jane Doe",
-    designation: "Foreign Minister",
-    organization: "Republic of Exampleland",
-    status: "Started",
-    remarks: "Arriving with delegation of 3",
-    carNumber: "DL-01-AB-1234",
-    loName: "Alex Johnson",
-    loNumber: "+91-9876543210",
-    facilitator: "Sarah Williams",
-    image: null,
-    lastUpdated: new Date().toISOString()
-  },
-  {
-    id: 2,
-    name: "John Smith",
-    designation: "Ambassador",
-    organization: "United Nations",
-    status: "Reaching in 5 min",
-    remarks: "Will proceed directly to conference room",
-    carNumber: "DL-02-CD-5678",
-    loName: "Michael Brown",
-    loNumber: "+91-8765432109",
-    facilitator: "Robert Davis",
-    image: null,
-    lastUpdated: new Date(Date.now() - 1000 * 60 * 15).toISOString() // 15 minutes ago
-  },
-  {
-    id: 3,
-    name: "Maria Garcia",
-    designation: "Secretary of State",
-    organization: "Republic of Samplestan",
-    status: "Not Started",
-    remarks: "Awaiting flight confirmation",
-    carNumber: "DL-03-EF-9012",
-    loName: "Emily Wilson",
-    loNumber: "+91-7654321098",
-    facilitator: "Daniel Lee",
-    image: null,
-    lastUpdated: new Date(Date.now() - 1000 * 60 * 30).toISOString() // 30 minutes ago
-  }
-];
+
 
 // Status options with their color mappings
 const statusOptions = {
-  "Reaching in 5 min": "bg-red-100 text-red-800 border-red-200",
-  "Reaching in 10 min": "bg-orange-100 text-orange-800 border-orange-200",
-  "Started": "bg-green-100 text-green-800 border-green-200",
-  "Not Started": "bg-yellow-100 text-yellow-800 border-yellow-200",
-  "Reached": "bg-blue-100 text-blue-800 border-blue-200"
-};
+    "Reaching in 5 min": "bg-red-100 text-red-800 border-red-200",
+    "Reaching in 10 min": "bg-orange-100 text-orange-800 border-orange-200",
+    "Started": "bg-green-100 text-green-800 border-green-200",
+    "Not Started": "bg-yellow-100 text-yellow-800 border-yellow-200",
+    "Reached": "bg-blue-100 text-blue-800 border-blue-200",
+    "Regret": "bg-gray-100 text-gray-800 border-gray-300"  // ✅ New entry
+  };
 
 const DignitaryTracker = () => {
   // State variables
@@ -65,7 +35,7 @@ const DignitaryTracker = () => {
   const [formVisible, setFormVisible] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editingInline, setEditingInline] = useState(null);
-  
+  const [inlineEdits, setInlineEdits] = useState({});
   // Form state
   const [formData, setFormData] = useState({
     name: '',
@@ -82,19 +52,27 @@ const DignitaryTracker = () => {
 
   // Initialize data
   useEffect(() => {
-    // In a real app, this would be an API call
-    setDignitaries(initialDignitaries);
+    const q = query(collection(db, "dignitaries"), orderBy("lastUpdated", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setDignitaries(fetchedData);
+    });
+    return () => unsubscribe(); // Clean up listener on unmount
   }, []);
 
   // Sort by status priority and then by last updated time
   const sortedDignitaries = [...dignitaries].sort((a, b) => {
     const statusPriority = {
-      "Reaching in 5 min": 0,
-      "Reaching in 10 min": 1,
-      "Started": 2,
-      "Not Started": 3,
-      "Reached": 4
-    };
+        "Reaching in 5 min": 0,
+        "Reaching in 10 min": 1,
+        "Started": 2,
+        "Not Started": 3,
+        "Reached": 4,
+        "Regret": 5  // ✅ Lowest priority
+      };
     
     if (statusPriority[a.status] !== statusPriority[b.status]) {
       return statusPriority[a.status] - statusPriority[b.status];
@@ -139,50 +117,53 @@ const DignitaryTracker = () => {
   };
 
   // Add new dignitary or update existing one
-  const handleSubmit = (e) => {
+// Add new dignitary or update existing one
+const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    const now = new Date().toISOString();
-    
-    if (editingId) {
-      // Update existing dignitary
-      setDignitaries(dignitaries.map(d => 
-        d.id === editingId ? 
-          { ...d, ...formData, lastUpdated: now } : 
-          d
-      ));
+  
+    const dataToSave = {
+      ...formData,
+      lastUpdated: serverTimestamp()
+    };
+  
+    try {
+      if (editingId) {
+        const docRef = doc(db, "dignitaries", editingId);
+        await updateDoc(docRef, dataToSave);
+      } else {
+        await addDoc(collection(db, "dignitaries"), dataToSave);  // ← this saves to Firestore
+      }
+  
+      // Reset
+      setFormData({
+        name: '',
+        designation: '',
+        organization: '',
+        status: 'Not Started',
+        remarks: '',
+        carNumber: '',
+        loName: '',
+        loNumber: '',
+        facilitator: '',
+        image: null
+      });      
+      setFormVisible(false);
       setEditingId(null);
-    } else {
-      // Add new dignitary
-      const newDignitary = {
-        ...formData,
-        id: Date.now(), // Simple ID generation
-        lastUpdated: now
-      };
-      setDignitaries([...dignitaries, newDignitary]);
+  
+    } catch (err) {
+      console.error("Error saving data:", err); // Check console if this fires
     }
-    
-    // Reset form
-    setFormData({
-      name: '',
-      designation: '',
-      organization: '',
-      status: 'Not Started',
-      remarks: '',
-      carNumber: '',
-      loName: '',
-      loNumber: '',
-      facilitator: '',
-      image: null
-    });
-    
-    setFormVisible(false);
   };
 
+
   // Delete a dignitary
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (userRole === 'admin' && window.confirm('Are you sure you want to delete this entry?')) {
-      setDignitaries(dignitaries.filter(d => d.id !== id));
+      try {
+        await deleteDoc(doc(db, "dignitaries", id));
+      } catch (err) {
+        console.error("Error deleting document:", err);
+      }
     }
   };
 
@@ -206,22 +187,36 @@ const DignitaryTracker = () => {
 
   // Start inline editing
   const startInlineEdit = (id) => {
+    const target = dignitaries.find(d => d.id === id);
+    setInlineEdits({
+      status: target.status,
+      remarks: target.remarks
+    });
     setEditingInline(id);
   };
 
   // Save inline edit
-  const saveInlineEdit = (id, status, remarks) => {
-    setDignitaries(dignitaries.map(d => 
-      d.id === id ? 
-        { ...d, status, remarks, lastUpdated: new Date().toISOString() } : 
-        d
-    ));
-    setEditingInline(null);
+  const saveInlineEdit = async (id) => {
+    try {
+      const docRef = doc(db, "dignitaries", id);
+      await updateDoc(docRef, {
+        status: inlineEdits.status,
+        remarks: inlineEdits.remarks,
+        lastUpdated: serverTimestamp()
+      });
+      setEditingInline(null);
+      setInlineEdits({});
+    } catch (err) {
+      console.error("Error updating document:", err);
+    }
   };
 
   // Format timestamp to readable format
   const formatTime = (timestamp) => {
-    const date = new Date(timestamp);
+    if (!timestamp) return "N/A"; // fallback if timestamp is missing
+  
+    // Handle Firestore Timestamp object
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     return date.toLocaleString();
   };
 
@@ -431,9 +426,17 @@ const DignitaryTracker = () => {
                       onChange={handleInputChange}
                       className="w-full p-2 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-300"
                     >
-                      {Object.keys(statusOptions).map(status => (
+                        
+                        {[
+                        "Reaching in 5 min",
+                        "Reaching in 10 min",
+                        "Started",
+                        "Not Started",
+                        "Reached",
+                        "Regret"
+                        ].map(status => (
                         <option key={status} value={status}>{status}</option>
-                      ))}
+                        ))}
                     </select>
                   </div>
                   
@@ -522,28 +525,20 @@ const DignitaryTracker = () => {
                         {editingInline === dignitary.id ? (
                           <div className="space-y-2">
                             <select
-                              value={dignitary.status}
-                              onChange={(e) => {
-                                setDignitaries(dignitaries.map(d => 
-                                  d.id === dignitary.id ? { ...d, status: e.target.value } : d
-                                ));
-                              }}
-                              className="w-full p-1 text-sm border border-gray-300 rounded-2xl"
+                            value={inlineEdits.status}
+                            onChange={(e) => setInlineEdits({ ...inlineEdits, status: e.target.value })}
+                            className="w-full p-1 text-sm border border-gray-300 rounded-2xl"
                             >
-                              {Object.keys(statusOptions).map(status => (
+                            {Object.keys(statusOptions).map(status => (
                                 <option key={status} value={status}>{status}</option>
-                              ))}
+                            ))}
                             </select>
                             
                             <textarea
-                              value={dignitary.remarks}
-                              onChange={(e) => {
-                                setDignitaries(dignitaries.map(d => 
-                                  d.id === dignitary.id ? { ...d, remarks: e.target.value } : d
-                                ));
-                              }}
-                              className="w-full p-1 text-sm border border-gray-300 rounded-2xl"
-                              rows="2"
+                                value={inlineEdits.remarks}
+                                onChange={(e) => setInlineEdits({ ...inlineEdits, remarks: e.target.value })}
+                                className="w-full p-1 text-sm border border-gray-300 rounded-2xl"
+                                rows="2"
                             ></textarea>
                             
                             <div className="flex justify-end space-x-2">
@@ -666,19 +661,15 @@ const DignitaryTracker = () => {
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">
                             {editingInline === dignitary.id ? (
-                              <select
-                                value={dignitary.status}
-                                onChange={(e) => {
-                                  setDignitaries(dignitaries.map(d => 
-                                    d.id === dignitary.id ? { ...d, status: e.target.value } : d
-                                  ));
-                                }}
-                                className="w-full p-1 text-sm border border-gray-300 rounded-2xl"
-                              >
-                                {Object.keys(statusOptions).map(status => (
-                                  <option key={status} value={status}>{status}</option>
-                                ))}
-                              </select>
+                             <select
+                             value={inlineEdits.status}
+                             onChange={(e) => setInlineEdits({ ...inlineEdits, status: e.target.value })}
+                             className="w-full p-1 text-sm border border-gray-300 rounded-2xl"
+                           >
+                             {Object.keys(statusOptions).map(status => (
+                               <option key={status} value={status}>{status}</option>
+                             ))}
+                           </select>
                             ) : (
                               <span 
                                 className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${statusOptions[dignitary.status]}`}
@@ -691,14 +682,10 @@ const DignitaryTracker = () => {
                           <td className="px-4 py-3 text-sm text-gray-500">
                             {editingInline === dignitary.id ? (
                               <textarea
-                                value={dignitary.remarks}
-                                onChange={(e) => {
-                                  setDignitaries(dignitaries.map(d => 
-                                    d.id === dignitary.id ? { ...d, remarks: e.target.value } : d
-                                  ));
-                                }}
-                                className="w-full p-1 text-sm border border-gray-300 rounded-lg"
-                                rows="2"
+                              value={inlineEdits.remarks}
+                              onChange={(e) => setInlineEdits({ ...inlineEdits, remarks: e.target.value })}
+                              className="w-full p-1 text-sm border border-gray-300 rounded-2xl"
+                              rows="2"
                               ></textarea>
                             ) : (
                               <span 
